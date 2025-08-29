@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Target Blaster Game</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+      background: #111;
+      color: white;
+    }
+    canvas {
+      display: block;
+      background: url(back.png);
+    }
+    #scoreBoard {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+<canvas id="gameCanvas" width="800" height="800"></canvas>
+<div id="scoreBoard">Score: 0</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Images
+const playerImage = new Image();
+playerImage.src = 'spaceship1_1.png';
+const asterImage = new Image();
+asterImage.src = 'aster.gif';
+const explosionImage = new Image();
+explosionImage.src = 'explo.png'; // changed name to explo.png
+
+// Player
+let player = {
+  x: 100,
+  y: canvas.height - 60,
+  width: 40,
+  height: 40,
+  vy: 0,
+  onGround: true,
+  image: playerImage
+};
+
+// Game state
+let bullets = [];
+let targets = [];
+let explosions = [];
+let keys = {};
+let score = 0;
+let isRapidFire = true;
+let lastFire = 20;
+let slowed = false;
+let gameOver = false;
+
+// Constants
+const bulletSpeed = 10;
+const targetSpeed = 1;
+const jumpStrength = -15;
+
+// Controls
+document.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'Space' && player.onGround) {
+    player.vy = jumpStrength;
+    player.onGround = false;
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+});
+
+document.addEventListener('mousedown', (e) => {
+  const now = Date.now();
+
+  // Ctrl slows targets
+  if (e.ctrlKey && !slowed) {
+    slowed = true;
+    setTimeout(() => slowed = false, 5000);
+  }
+
+  // Shift = single fire
+  isRapidFire = !e.shiftKey;
+
+  if (isRapidFire || (!isRapidFire && now - lastFire > 500)) {
+    fireBullet();
+    lastFire = now;
+  }
+});
+
+function fireBullet() {
+  bullets.push({
+    x: player.x + player.width / 2,
+    y: player.y,
+    width: 5,
+    height: 10,
+    color: 'yellow'
+  });
+}
+
+function spawnTarget() {
+  targets.push({
+    x: Math.random() * (canvas.width - 80),
+    y: -80,
+    width: 80,
+    height: 80,
+    color: 'blue'
+  });
+}
+
+function update() {
+  // Movement
+  if (keys['ArrowLeft']) player.x -= 10;
+  if (keys['ArrowRight']) player.x += 10;
+  if (keys['ArrowUp']) player.y -= 10;
+  if (keys['ArrowDown']) player.y += 10;
+
+  // Prevent going off screen
+  player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+  if (player.y + player.height >= canvas.height) {
+    player.y = canvas.height - player.height;
+    player.vy = 0;
+    player.onGround = true;
+  }
+
+  // Bullets
+  bullets = bullets.filter(b => b.y > 0);
+  bullets.forEach(b => b.y -= bulletSpeed);
+
+  // Targets
+  targets.forEach(t => t.y += slowed ? 0.5 : targetSpeed);
+
+  // Explosions
+  explosions.forEach(ex => ex.time--);
+  explosions = explosions.filter(ex => ex.time > 0);
+
+  // Bullet–Target collisions (safe loop)
+  for (let bi = bullets.length - 1; bi >= 0; bi--) {
+    for (let ti = targets.length - 1; ti >= 0; ti--) {
+      let b = bullets[bi];
+      let t = targets[ti];
+
+      if (
+        b.x < t.x + t.width &&
+        b.x + b.width > t.x &&
+        b.y < t.y + t.height &&
+        b.y + b.height > t.y
+      ) {
+        // Explosion
+        explosions.push({
+          x: t.x,
+          y: t.y,
+          width: t.width,
+          height: t.height,
+          time: 15
+        });
+
+        targets.splice(ti, 1);
+        bullets.splice(bi, 1);
+        score++;
+        document.getElementById('scoreBoard').innerText = `Score: ${score}`;
+        break; // stop checking this bullet
+      }
+    }
+  }
+
+  // Player–Target collision (game over)
+  for (let t of targets) {
+    if (
+      player.x < t.x + t.width &&
+      player.x + player.width > t.x &&
+      player.y < t.y + t.height &&
+      player.y + player.height > t.y
+    ) {
+      gameOver = true;
+    }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Player
+  if (playerImage.complete) {
+    ctx.drawImage(playerImage, player.x, player.y, player.width, player.height);
+  } else {
+    ctx.fillStyle = 'white';
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+  }
+
+  // Bullets
+  bullets.forEach(b => {
+    ctx.fillStyle = b.color;
+    ctx.fillRect(b.x, b.y, b.width, b.height);
+  });
+
+  // Targets
+  targets.forEach(t => {
+    if (asterImage.complete) {
+      ctx.drawImage(asterImage, t.x, t.y, t.width, t.height);
+    } else {
+      ctx.fillStyle = t.color;
+      ctx.fillRect(t.x, t.y, t.width, t.height);
+    }
+  });
+
+  // Explosions
+  explosions.forEach(ex => {
+    if (explosionImage.complete) {
+      ctx.drawImage(explosionImage, ex.x, ex.y, ex.width, ex.height);
+    } else {
+      ctx.fillStyle = 'orange';
+      ctx.beginPath();
+      ctx.arc(ex.x + ex.width / 2, ex.y + ex.height / 2, ex.width / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // Game Over
+  if (gameOver) {
+    ctx.fillStyle = "white";
+    ctx.font = "36px sans-serif";
+    ctx.fillText("Game Over", canvas.width / 2 - 100, canvas.height / 2);
+    ctx.font = "18px sans-serif";
+    ctx.fillText("Press R to Restart", canvas.width / 2 - 80, canvas.height / 2 + 30);
+  }
+}
+
+function gameLoop() {
+  if (!gameOver) {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+setInterval(() => {
+  if (!gameOver) spawnTarget();
+}, 1000);
+
+// Restart
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyR' && gameOver) {
+    resetGame();
+  }
+});
+
+function resetGame() {
+  player.y = canvas.height - 60;
+  bullets = [];
+  targets = [];
+  explosions = [];
+  score = 0;
+  gameOver = false;
+  document.getElementById('scoreBoard').innerText = `Score: ${score}`;
+  gameLoop();
+}
+
+gameLoop();
+</script>
+
+</body>
+</html>
